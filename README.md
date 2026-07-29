@@ -29,6 +29,10 @@
 > 会同时核验真实 Chrome、extension manifest 版本/build hash、页面 handshake，并由 extension
 > 对目标 tab 逐广告位检查 source-bound manifest；只有 `allPass=true` 才通过，同时产出
 > JSON 和截图证据。
+>
+> **批量验收**：先创建一个 task-owned tab；随后每个 case 使用
+> `--target <targetId>` 复用该 tab。脚本会在同一 tab 内导航和验收，避免每条 case 新建 tab
+> 或触发额外的 CDP 授权提示；完成后只关闭这个 task-owned tab。
 
 <img width="879" height="376" alt="image" src="https://github.com/user-attachments/assets/a87fd816-a0b5-4264-b01c-9466eae90723" />
 

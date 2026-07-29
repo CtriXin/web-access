@@ -53,6 +53,10 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-ad-placement-inspector.mjs" \
   --evidence-dir "<artifact-root>/evidence/runtime"
 ```
 
+批量广告位验收时，必须只创建一个 task-owned 后台 tab，再让每条 case 传同一个
+`--target <targetId>`。该命令会在这个 tab 内导航并执行验收，绝不能为每条 case 重复创建 tab
+或重启 Proxy；结束后只关闭这个 task-owned tab。`--target` 不得指向用户已有 tab。
+
 只有同时满足真实 Chrome CDP 已连接、extension service worker manifest 的 name/version/build hash
 匹配 canonical source、目标页面 content-script handshake 同 hash，并且 extension 在目标 tab 上执行
 `ADI_RUN_ACCEPTANCE` 后逐广告位 `placement_acceptance.acceptance.allPass=true` 才是
