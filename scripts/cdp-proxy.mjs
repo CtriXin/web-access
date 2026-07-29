@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
-import { selectBrowser, findFallbackPort, browserEnvironment } from './browser-discovery.mjs';
+import { selectBrowser, findFallbackPort, productMatchesBrowser, browserEnvironment } from './browser-discovery.mjs';
 
 // --- 解析命令行 --browser 参数（本次启动用哪个浏览器）---
 function parseBrowserArg() {
@@ -66,7 +66,11 @@ async function discoverChromePort() {
     }
     pinnedBrowserId = result.browser.id;
     connectedBrowser = { id: result.browser.id, label: result.browser.label, source: result.source };
-    const tag = result.source === 'override' ? '[--browser 指定]' : '[config.env 偏好]';
+    const tag = result.source === 'override'
+      ? '[--browser 指定]'
+      : result.source === 'fallback'
+        ? '[固定端口候选，连接后验证]'
+        : '[config.env 偏好]';
     console.log(`[CDP Proxy] 选用 ${result.browser.label} (端口 ${result.browser.port}${result.browser.wsPath ? '，带 wsPath' : ''}) ${tag}`);
     return { port: result.browser.port, wsPath: result.browser.wsPath };
   }
@@ -92,9 +96,9 @@ async function discoverChromePort() {
   // 仅在「从未成功连接 + 无偏好/override」时允许固定端口兜底（手动 --remote-debugging-port 启动场景）
   const fallbackPort = await findFallbackPort();
   if (fallbackPort !== null) {
-    connectedBrowser = { id: 'unknown', label: '未知（通过手动调试端口连接）', source: 'fallback' };
-    console.log(`[CDP Proxy] 通过手动调试端口连接: ${fallbackPort}`);
-    return { port: fallbackPort, wsPath: null };
+    connectedBrowser = { id: 'unknown', label: '未知（通过固定端口候选）', source: 'fallback' };
+    console.log(`[CDP Proxy] 使用固定端口候选: ${fallbackPort.port}`);
+    return { port: fallbackPort.port, wsPath: fallbackPort.wsPath };
   }
   return null;
 }
@@ -131,11 +135,32 @@ async function connect() {
   return connectingPromise = new Promise((resolve, reject) => {
     ws = new WS(wsUrl);
 
-    const onOpen = () => {
+    const onOpen = async () => {
       cleanup();
-      connectingPromise = null;
-      console.log(`[CDP Proxy] 已连接浏览器 (端口 ${chromePort})`);
-      resolve();
+      try {
+        // Keep a single browser connection: this is both the permission-bearing connection and the CDP proof.
+        const version = await sendCDP('Browser.getVersion');
+        const product = version.result?.product;
+        if (typeof product !== 'string') throw new Error('CDP Browser.getVersion 未返回浏览器产品信息');
+        if (
+          connectedBrowser?.source === 'fallback'
+          && connectedBrowser.id !== 'unknown'
+          && !productMatchesBrowser(product, connectedBrowser.id)
+        ) {
+          throw new Error(`固定端口返回 ${product}，与请求的 ${connectedBrowser.id} 不一致`);
+        }
+        connectedBrowser = { ...connectedBrowser, product };
+        connectingPromise = null;
+        console.log(`[CDP Proxy] 已连接浏览器 (端口 ${chromePort}, ${product})`);
+        resolve();
+      } catch (error) {
+        connectingPromise = null;
+        ws?.close();
+        ws = null;
+        chromePort = null;
+        chromeWsPath = null;
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     };
     const onError = (e) => {
       cleanup();

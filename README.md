@@ -130,6 +130,8 @@ CDP 模式需要 **Node.js 22+** 和浏览器（Chrome / Edge）开启远程调�
    - Edge：`edge://inspect/#remote-debugging`
 2. 勾选 **Allow remote debugging for this browser instance**（可能需要重启浏览器）
 
+在 MMF/Codex 等隔离会话中，先设置 `WEB_ACCESS_HOST_HOME` 指向宿主用户目录。若 Chrome 已在固定端口开启远程调试但未生成 `DevToolsActivePort`，`check-deps.mjs` 会把 `9222`、`9229`、`9333` 的监听端口交给任务专属 proxy；proxy 只建立一条最终 WebSocket，并用 `Browser.getVersion` 验证 CDP 和浏览器身份。TCP 能连接本身不会被误判为可用 CDP，也不会额外触发一次 Chrome 授权弹窗。
+
 ### 浏览器偏好（config.env）
 
 skill 长期偏好保存在 `${CLAUDE_SKILL_DIR}/config.env`（首次运行自动从 `config.env.template` 创建，gitignored）：

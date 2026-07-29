@@ -18,6 +18,8 @@ metadata:
 
 For MMF, Codex, and other isolated sessions, export `WEB_ACCESS_HOST_HOME` (or `HOST_HOME` / `REAL_HOME`) as the host user's home directory before running the precheck. Browser discovery then reads the host `DevToolsActivePort`, while the agent never copies the host Chrome profile or cookie database. If the session HOME is isolated and no host-home handoff is available, `check-deps.mjs` hard-fails rather than guessing a Chrome profile or starting a browser.
 
+When a host Chrome has remote debugging enabled on a fixed port but does not expose `DevToolsActivePort`, the precheck may identify a standard local listener as a candidate. It must not open a separate probe connection: the task-owned CDP Proxy performs one `Browser.getVersion` round trip on its final connection, verifies the configured browser product, and keeps that authorized connection alive. A TCP listener or an HTTP response alone is never reported as usable CDP, and an already connected proxy is always reused before any discovery.
+
 ## 前置检查
 
 在开始联网操作前，先检查 CDP 模式可用性：

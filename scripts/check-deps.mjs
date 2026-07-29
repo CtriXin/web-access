@@ -144,7 +144,11 @@ async function resolveAndReport(override) {
 
   switch (result.kind) {
     case 'ok': {
-      const sourceTag = result.source === 'override' ? '[--browser 指定]' : '[config.env 偏好]';
+      const sourceTag = result.source === 'override'
+        ? '[--browser 指定]'
+        : result.source === 'fallback'
+          ? '[固定端口候选，连接后验证]'
+          : '[config.env 偏好]';
       console.log(`browser: ok (${result.browser.label}, port ${result.browser.port}) ${sourceTag}`);
       return { proceed: true, browserId: result.browser.id };
     }
@@ -176,7 +180,7 @@ async function resolveAndReport(override) {
       // 末路兜底：尝试常见固定端口（用户手动 --remote-debugging-port=9222 启动的场景）
       const fallbackPort = await findFallbackPort();
       if (fallbackPort) {
-        console.log(`browser: ok (port ${fallbackPort}) [通过手动调试端口连接]`);
+        console.log(`browser: candidate (port ${fallbackPort.port}) [由 proxy CDP 握手验证]`);
         return { proceed: true };
       }
       console.log('browser: 未连接 — 没有任何浏览器打开远程调试开关');
