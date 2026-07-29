@@ -18,10 +18,31 @@ import { fileURLToPath } from 'node:url';
 const SKILL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG_PATH = path.join(SKILL_ROOT, 'config.env');
 
-// 已知支持 chrome://inspect#remote-debugging toggle 的浏览器
+function isIsolatedHome(home) {
+  return /\/(?:\.mmf|\.config\/mms|\.config\/mmf|gateway\/s|sessions)\//.test(home || '');
+}
+
+// Return a host-home decision that agents can inspect. An isolated HOME is never used as a
+// Chrome profile location unless an explicit host-home handoff overrides it.
+export function browserEnvironment() {
+  const configuredHostHome = readConfig().WEB_ACCESS_HOST_HOME;
+  const explicitHome = process.env.WEB_ACCESS_HOST_HOME || process.env.HOST_HOME || process.env.REAL_HOME || configuredHostHome;
+  if (explicitHome) return { hostHome: explicitHome, source: 'explicit', isolated: false };
+
+  const processHome = os.homedir();
+  if (!isIsolatedHome(processHome)) return { hostHome: processHome, source: 'system', isolated: false };
+
+  return { hostHome: null, source: 'missing', isolated: true, processHome };
+}
+
+function browserHome() {
+  return browserEnvironment().hostHome;
+}
+
 // 加新浏览器：只改这里
 export function knownBrowsers() {
-  const home = os.homedir();
+  const home = browserHome();
+  if (!home) return [];
   const localAppData = process.env.LOCALAPPDATA || '';
   switch (os.platform()) {
     case 'darwin':

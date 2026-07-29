@@ -5,7 +5,7 @@
 - 地址：`http://localhost:3456`
 - 启动：`node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &`
 - 启动后持续运行，不建议主动停止（重启需 Chrome 重新授权）
-- 强制停止：`pkill -f cdp-proxy.mjs`
+- 停止：先用 `ps -axo pid=,command=` 核对脚本路径，再只 `kill <精确 PID>`。
 
 ## API 端点
 
@@ -71,6 +71,30 @@ curl -s -X POST "http://localhost:3456/click?target=ID" -d 'button.submit'
 CDP 浏览器级真实鼠标点击（`Input.dispatchMouseEvent`），POST body 为 CSS 选择器。先获取元素坐标，再模拟鼠标按下/释放。算真实用户手势，能触发文件对话框、绕过部分反自动化检测。
 ```bash
 curl -s -X POST "http://localhost:3456/clickAt?target=ID" -d 'button.upload'
+```
+
+### POST /clickAtPosition?target=ID
+在 CSS 像素坐标发送真实点击，适合 canvas 表格。
+```bash
+curl -s -X POST "http://localhost:3456/clickAtPosition?target=ID" -d '{"x":100,"y":200}'
+```
+
+### POST /key?target=ID
+发送真实 CDP 键盘事件。`action` 支持 `press`、`down`、`up`、`char`；`modifiers` 支持 `Meta`、`Control`、`Alt`、`Shift`。
+```bash
+curl -s -X POST "http://localhost:3456/key?target=ID" -d '{"key":"Enter","code":"Enter","windowsVirtualKeyCode":13}'
+```
+
+### POST /insertText?target=ID
+向已进入编辑态的控件发送真实文本输入。
+```bash
+curl -s -X POST "http://localhost:3456/insertText?target=ID" --data-binary '待输入文本'
+```
+
+### GET /viewport?target=ID
+读取 CSS 视口和设备倍率，避免 canvas 坐标与截图像素混用。
+```bash
+curl -s "http://localhost:3456/viewport?target=ID"
 ```
 
 ### POST /setFiles?target=ID

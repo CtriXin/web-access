@@ -18,6 +18,18 @@
   </details>
 </div>
 
+> **CtriXin distribution**：本仓库 fork 自
+> [`eze-is/web-access`](https://github.com/eze-is/web-access)，保留原作者与 MIT
+> 归属，并加入 MMF host-home 隔离、真实输入安全和广告位 source-fidelity
+> 验收。上游关系、版本基线与同步策略见 [UPSTREAM.md](./UPSTREAM.md)。
+
+> **本机广告位审计扩展**：广告位 source-fidelity 任务使用 canonical 最新目录
+> `~/auto-skills/CtriXin-repo/chrome-extensions/ad-placement-inspector/`。运行
+> `scripts/check-ad-placement-inspector.mjs --url <url> --manifest <source-manifest> --evidence-dir <dir>`
+> 会同时核验真实 Chrome、extension manifest 版本/build hash、页面 handshake，并由 extension
+> 对目标 tab 逐广告位检查 source-bound manifest；只有 `allPass=true` 才通过，同时产出
+> JSON 和截图证据。
+
 <img width="879" height="376" alt="image" src="https://github.com/user-attachments/assets/a87fd816-a0b5-4264-b01c-9466eae90723" />
 
 <p align="center">
@@ -138,7 +150,9 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs" --browser chrome
 **切换浏览器**（proxy 已连接旧的）：
 
 ```bash
-pkill -f cdp-proxy.mjs && node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
+ps -axo pid=,command= | rg '/web-access/scripts/cdp-proxy.mjs'
+# 核对脚本路径后，只 kill 上一步确认的精确 PID，再运行：
+node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 ```
 
 环境检查（Agent 运行时会自动完成前置检查，无需手动执行）：

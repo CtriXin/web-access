@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { selectBrowser, knownBrowsers, findFallbackPort } from './browser-discovery.mjs';
+import { selectBrowser, knownBrowsers, findFallbackPort, browserEnvironment } from './browser-discovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROXY_SCRIPT = path.join(ROOT, 'scripts', 'cdp-proxy.mjs');
@@ -86,7 +86,7 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
     const runningLabel = health.browser?.label || runningId || 'unknown';
     if (expectedBrowserId && runningId && runningId !== 'unknown' && runningId !== expectedBrowserId) {
       console.log(`proxy: 浏览器不一致 — 当前已连着 ${runningLabel}，但本次需要 ${expectedBrowserId}`);
-      console.log('  请在终端运行 pkill -f cdp-proxy.mjs 重置后再试');
+      console.log('  请先核对并停止当前 web-access proxy 的精确 PID，再重试');
       return false;
     }
     console.log(`proxy: ready (${runningLabel})`);
@@ -154,8 +154,8 @@ async function resolveAndReport(override) {
       const sourceDesc = result.source === 'override' ? '本次指定' : '默认偏好';
       console.log(`browser: error — ${sourceDesc}的浏览器是 "${expected}" (${expectedLabel})，但没连上`);
       console.log(`  Agent 处理顺序：`);
-      console.log(`    1. 先用系统命令打开 ${expectedLabel}（按你所在平台自行选择，如 macOS 的 open -a），再重新运行 node check-deps.mjs`);
-      console.log(`    2. 若仍报相同错误，可能是因为远程调试开关没启用 —— 告诉用户：在 ${expectedLabel} 的地址栏访问 ${expected}://inspect/#remote-debugging，勾选 "Allow remote debugging for this browser instance"`);
+      console.log(`    1. 不要从隔离会话直接启动 ${expectedLabel}；请让用户在宿主环境打开或使用 mms-chrome-host`);
+      console.log(`    2. 若仍失败，可能是因为远程调试开关没启用 —— 告诉用户：在 ${expectedLabel} 的地址栏访问 ${expected}://inspect/#remote-debugging，勾选 "Allow remote debugging for this browser instance"`);
       printAvailableHint(result.detected);
       if (result.source === 'preference') {
         console.log(`  也可以编辑 config.env 改默认偏好，或本次临时换浏览器：node check-deps.mjs --browser <id>`);
@@ -184,6 +184,15 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   ensureConfigExists();
   checkNode();
+
+  const env = browserEnvironment();
+  if (env.isolated && !env.hostHome) {
+    console.log(`environment: isolated HOME (${env.processHome})`);
+    console.log('browser: blocked — 未提供宿主 HOME，拒绝在隔离目录查找或启动个人 Chrome');
+    console.log('  设置 WEB_ACCESS_HOST_HOME，或由 MMF 注入 HOST_HOME / REAL_HOME 后重试。');
+    process.exit(1);
+  }
+  console.log(`environment: host home ${env.hostHome} [${env.source}]`);
 
   const { proceed, exitCode, browserId } = await resolveAndReport(opts.browser);
   if (!proceed) process.exit(exitCode);
