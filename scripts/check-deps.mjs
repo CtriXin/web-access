@@ -66,6 +66,11 @@ export function isConnectedProxyHealth(health) {
   return health?.status === 'ok' && health.connected === true;
 }
 
+function isCompatibleProxyHealth(health, expectedBrowserId) {
+  return isConnectedProxyHealth(health)
+    && (!expectedBrowserId || health.browser?.id === expectedBrowserId);
+}
+
 async function connectedProxyHealth() {
   const health = await httpGetJson(PROXY_HEALTH_URL);
   return isConnectedProxyHealth(health) ? health : null;
@@ -191,6 +196,18 @@ async function resolveAndReport(override) {
   }
 }
 
+function reportSitePatterns() {
+  const patternsDir = path.join(ROOT, 'references', 'site-patterns');
+  try {
+    const sites = fs.readdirSync(patternsDir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => f.replace(/\.md$/, ''));
+    if (sites.length) {
+      console.log(`\nsite-patterns: ${sites.join(', ')}`);
+    }
+  } catch {}
+}
+
 // --- main ---
 
 export async function main() {
@@ -198,9 +215,10 @@ export async function main() {
 
   // A connected proxy is authoritative and remains reachable when sandbox TCC blocks DevToolsActivePort.
   const health = await connectedProxyHealth();
-  if (health) {
+  if (isCompatibleProxyHealth(health, opts.browser)) {
     const label = health.browser?.label || health.browser?.id || 'unknown';
     console.log(`proxy: ready (${label})`);
+    reportSitePatterns();
     return;
   }
 
@@ -222,16 +240,7 @@ export async function main() {
   const proxyOk = await ensureProxy(browserId, opts.browser);
   if (!proxyOk) process.exit(1);
 
-  // 列出已有站点经验
-  const patternsDir = path.join(ROOT, 'references', 'site-patterns');
-  try {
-    const sites = fs.readdirSync(patternsDir)
-      .filter(f => f.endsWith('.md'))
-      .map(f => f.replace(/\.md$/, ''));
-    if (sites.length) {
-      console.log(`\nsite-patterns: ${sites.join(', ')}`);
-    }
-  } catch {}
+  reportSitePatterns();
 }
 
 const isDirectExecution = process.argv[1]
