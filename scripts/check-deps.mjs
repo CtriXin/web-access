@@ -71,9 +71,9 @@ function isCompatibleProxyHealth(health, expectedBrowserId) {
     && (!expectedBrowserId || health.browser?.id === expectedBrowserId);
 }
 
-async function connectedProxyHealth(expectedBrowserId) {
+async function connectedProxyHealth() {
   const health = await httpGetJson(PROXY_HEALTH_URL);
-  return isCompatibleProxyHealth(health, expectedBrowserId) ? health : null;
+  return isConnectedProxyHealth(health) ? health : null;
 }
 
 function startProxyDetached(browserOverride) {
@@ -94,7 +94,7 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
   const targetsUrl = `http://127.0.0.1:${PROXY_PORT}/targets`;
 
   // 复用：proxy 已运行 + 已连接浏览器 → 校验 expected vs actual
-  const health = await connectedProxyHealth(expectedBrowserId);
+  const health = await connectedProxyHealth();
   if (health) {
     const runningId = health.browser?.id;
     const runningLabel = health.browser?.label || runningId || 'unknown';
@@ -214,8 +214,8 @@ export async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
   // A connected proxy is authoritative and remains reachable when sandbox TCC blocks DevToolsActivePort.
-  const health = await connectedProxyHealth(opts.browser);
-  if (health) {
+  const health = await connectedProxyHealth();
+  if (isCompatibleProxyHealth(health, opts.browser)) {
     const label = health.browser?.label || health.browser?.id || 'unknown';
     console.log(`proxy: ready (${label})`);
     reportSitePatterns();
