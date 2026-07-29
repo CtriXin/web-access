@@ -18,6 +18,7 @@ import { selectBrowser, knownBrowsers, findFallbackPort, browserEnvironment } fr
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROXY_SCRIPT = path.join(ROOT, 'scripts', 'cdp-proxy.mjs');
 const PROXY_PORT = Number(process.env.CDP_PROXY_PORT || 3456);
+const PROXY_HEALTH_URL = `http://127.0.0.1:${PROXY_PORT}/health`;
 const CONFIG_PATH = path.join(ROOT, 'config.env');
 const CONFIG_TEMPLATE = path.join(ROOT, 'templates', 'config.env.template');
 
@@ -61,6 +62,15 @@ function httpGetJson(url, timeoutMs = 3000) {
     .catch(() => null);
 }
 
+export function isConnectedProxyHealth(health) {
+  return health?.status === 'ok' && health.connected === true;
+}
+
+async function connectedProxyHealth() {
+  const health = await httpGetJson(PROXY_HEALTH_URL);
+  return isConnectedProxyHealth(health) ? health : null;
+}
+
 function startProxyDetached(browserOverride) {
   const logFile = path.join(os.tmpdir(), 'cdp-proxy.log');
   const logFd = fs.openSync(logFile, 'a');
@@ -76,12 +86,11 @@ function startProxyDetached(browserOverride) {
 }
 
 async function ensureProxy(expectedBrowserId, browserOverride) {
-  const healthUrl = `http://127.0.0.1:${PROXY_PORT}/health`;
   const targetsUrl = `http://127.0.0.1:${PROXY_PORT}/targets`;
 
   // 复用：proxy 已运行 + 已连接浏览器 → 校验 expected vs actual
-  const health = await httpGetJson(healthUrl);
-  if (health?.status === 'ok' && health.connected) {
+  const health = await connectedProxyHealth();
+  if (health) {
     const runningId = health.browser?.id;
     const runningLabel = health.browser?.label || runningId || 'unknown';
     if (expectedBrowserId && runningId && runningId !== 'unknown' && runningId !== expectedBrowserId) {
@@ -101,7 +110,7 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
   for (let i = 1; i <= 15; i++) {
     const result = await httpGetJson(targetsUrl, 8000);
     if (Array.isArray(result)) {
-      const newHealth = await httpGetJson(healthUrl);
+      const newHealth = await httpGetJson(PROXY_HEALTH_URL);
       const label = newHealth?.browser?.label || 'unknown';
       console.log(`proxy: ready (${label})`);
       return true;
@@ -180,8 +189,17 @@ async function resolveAndReport(override) {
 
 // --- main ---
 
-async function main() {
+export async function main() {
   const opts = parseArgs(process.argv.slice(2));
+
+  // A connected proxy is authoritative and remains reachable when sandbox TCC blocks DevToolsActivePort.
+  const health = await connectedProxyHealth();
+  if (health) {
+    const label = health.browser?.label || health.browser?.id || 'unknown';
+    console.log(`proxy: ready (${label})`);
+    return;
+  }
+
   ensureConfigExists();
   checkNode();
 
@@ -212,4 +230,7 @@ async function main() {
   } catch {}
 }
 
-await main();
+const isDirectExecution = process.argv[1]
+  && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+
+if (isDirectExecution) await main();
