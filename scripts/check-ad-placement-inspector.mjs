@@ -113,20 +113,34 @@ async function main() {
       && pageHandshake?.url
       && extensionStatus.status === 'passed'
     ) {
-      placementAcceptance = await jsonFetch(
-        `${PROXY}/extension-acceptance`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            name: manifest.name,
-            version: manifest.version,
-            buildHash: attestation.buildHash,
-            targetUrl: pageHandshake.url,
-            manifest: acceptanceManifest,
-          }),
-        },
-      );
+      const acceptanceRequest = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: manifest.name,
+          version: manifest.version,
+          buildHash: attestation.buildHash,
+          targetUrl: pageHandshake.url,
+          manifest: acceptanceManifest,
+        }),
+      };
+      const maxAcceptanceAttempts = 20;
+      for (let attempt = 1; attempt <= maxAcceptanceAttempts; attempt++) {
+        placementAcceptance = await jsonFetch(
+          `${PROXY}/extension-acceptance`,
+          acceptanceRequest,
+        );
+        placementAcceptance.preflight = {
+          attempts: attempt,
+          maxAttempts: maxAcceptanceAttempts,
+          retryIntervalMs: 250,
+        };
+        if (
+          placementAcceptance.status === 'passed'
+          && placementAcceptance.acceptance?.allPass === true
+        ) break;
+        if (attempt < maxAcceptanceAttempts) await wait(250);
+      }
     }
     const handshakePassed = (
       pageHandshake?.enabled === 'enabled'
