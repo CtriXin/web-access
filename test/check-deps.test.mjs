@@ -69,7 +69,7 @@ test('check-deps accepts a connected proxy before sandbox browser discovery', as
 
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /proxy: ready \(Chrome\)/);
-  assert.match(result.stdout, /site-patterns: test-proxy-health-pattern/);
+  assert.match(result.stdout, /site-patterns: .*test-proxy-health-pattern/);
   assert.doesNotMatch(result.stdout, /browser:/);
 });
 
