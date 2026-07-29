@@ -769,6 +769,40 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify(resp.result?.result?.value || {}));
     }
 
+    // POST /setViewport?target=xxx — 仅允许 task-owned tab 设置 CDP 设备视口。
+    else if (pathname === '/setViewport') {
+      if (req.method !== 'POST') {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: 'POST body 需要 viewport JSON' }));
+        return;
+      }
+      if (!q.target || !managedTabs.has(q.target)) {
+        res.statusCode = 403;
+        res.end(JSON.stringify({ error: '只允许对通过 /new 创建的 task-owned tab 设置 viewport' }));
+        return;
+      }
+      const body = JSON.parse(await readBody(req));
+      const width = Number(body.width);
+      const height = Number(body.height);
+      const deviceScaleFactor = body.deviceScaleFactor === undefined ? 1 : Number(body.deviceScaleFactor);
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 3840 || height > 3840 || !Number.isFinite(deviceScaleFactor) || deviceScaleFactor < 0 || deviceScaleFactor > 4) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: 'viewport width/height 必须是 1-3840 的整数，deviceScaleFactor 必须在 0-4 之间' }));
+        return;
+      }
+      const sid = await ensureSession(q.target);
+      await sendCDP('Emulation.setDeviceMetricsOverride', {
+        width,
+        height,
+        deviceScaleFactor,
+        mobile: body.mobile === true,
+        screenWidth: width,
+        screenHeight: height,
+      }, sid);
+      touchTab(q.target);
+      res.end(JSON.stringify({ status: 'ok', targetId: q.target, width, height, deviceScaleFactor, mobile: body.mobile === true }));
+    }
+
     // POST /setFiles?target=xxx — 给 file input 设置本地文件（绕过文件对话框）
     // body: JSON { "selector": "input[type=file]", "files": ["/path/to/file1.png", "/path/to/file2.png"] }
     else if (pathname === '/setFiles') {
@@ -871,6 +905,7 @@ const server = http.createServer(async (req, res) => {
           '/key?target=': 'POST JSON {action?,key,code?,text?,modifiers?} - 真实 CDP 键盘事件',
           '/insertText?target=': 'POST body=文本 - 向已进入编辑态的元素输入文本',
           '/viewport?target=': 'GET - CSS 视口、devicePixelRatio 和 visualViewport',
+          '/setViewport?target=': 'POST JSON {width,height,deviceScaleFactor?,mobile?} - 仅 task-owned tab 的 CDP 设备视口',
           '/scroll?target=&y=&direction=': 'GET - 滚动页面',
           '/screenshot?target=&file=': 'GET - 截图',
         },

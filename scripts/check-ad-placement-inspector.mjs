@@ -16,6 +16,11 @@ const EXTENSION_ROOT = path.resolve(
 const PROXY = `http://127.0.0.1:${Number(process.env.CDP_PROXY_PORT || 3456)}`;
 const EXPECTED_SCHEMA = 'ad-placement-inspector.handshake.v2';
 
+function mobileViewportFor(manifest) {
+  if (manifest?.context?.viewportClass !== 'mobile') return null;
+  return { width: 390, height: 844, deviceScaleFactor: 1, mobile: true };
+}
+
 function parseArgs(argv) {
   const out = { url: '', evidenceDir: '', manifest: '', keepTab: false, targetId: '' };
   for (let i = 0; i < argv.length; i++) {
@@ -79,10 +84,18 @@ async function main() {
 
   let targetId = args.targetId;
   let createdTarget = false;
+  const mobileViewport = mobileViewportFor(acceptanceManifest);
   if (targetId) {
     const targets = await jsonFetch(`${PROXY}/targets`);
     if (!targets.some(target => target.targetId === targetId && target.type === 'page')) {
       throw new Error('--target must be an existing task-owned page target');
+    }
+    if (mobileViewport) {
+      await jsonFetch(`${PROXY}/setViewport?target=${encodeURIComponent(targetId)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(mobileViewport),
+      });
     }
     // Reuse one task-owned tab across a batch to avoid per-case CDP prompts.
     await jsonFetch(`${PROXY}/navigate?target=${encodeURIComponent(targetId)}`, {
@@ -90,9 +103,24 @@ async function main() {
       body: inspectedUrl.href,
     });
   } else {
-    const created = await jsonFetch(`${PROXY}/new`, { method: 'POST', body: inspectedUrl.href });
+    // Set mobile emulation before navigation so responsive layout is verified at first render.
+    const created = await jsonFetch(`${PROXY}/new`, {
+      method: 'POST',
+      body: mobileViewport ? 'about:blank' : inspectedUrl.href,
+    });
     targetId = created.targetId;
     createdTarget = true;
+    if (mobileViewport) {
+      await jsonFetch(`${PROXY}/setViewport?target=${encodeURIComponent(targetId)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(mobileViewport),
+      });
+      await jsonFetch(`${PROXY}/navigate?target=${encodeURIComponent(targetId)}`, {
+        method: 'POST',
+        body: inspectedUrl.href,
+      });
+    }
   }
   let result;
   try {

@@ -57,6 +57,10 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-ad-placement-inspector.mjs" \
 `--target <targetId>`。该命令会在这个 tab 内导航并执行验收，绝不能为每条 case 重复创建 tab
 或重启 Proxy；结束后只关闭这个 task-owned tab。`--target` 不得指向用户已有 tab。
 
+当 source-bound manifest 声明 `viewportClass: "mobile"` 时，检查器会通过 Proxy 的
+`/setViewport` 为这个 task-owned tab 应用 `390 x 844` 的 CDP emulation，再导航到目标页。
+该接口拒绝用户已有 tab，不会新增 Chrome 连接或触发逐 case 授权；Desktop tab 保持真实窗口视口。
+
 只有同时满足真实 Chrome CDP 已连接、extension service worker manifest 的 name/version/build hash
 匹配 canonical source、目标页面 content-script handshake 同 hash，并且 extension 在目标 tab 上执行
 `ADI_RUN_ACCEPTANCE` 后逐广告位 `placement_acceptance.acceptance.allPass=true` 才是

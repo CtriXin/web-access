@@ -97,6 +97,15 @@ curl -s -X POST "http://localhost:3456/insertText?target=ID" --data-binary '待�
 curl -s "http://localhost:3456/viewport?target=ID"
 ```
 
+### POST /setViewport?target=ID
+为通过 `/new` 创建的 task-owned tab 下发 CDP 设备视口。拒绝用户已有 tab；不会建立新的 Chrome
+连接。Mobile source-bound 广告验收由检查器自动调用，通常不需要手工执行。
+```bash
+curl -s -X POST "http://localhost:3456/setViewport?target=ID" \
+  -H 'content-type: application/json' \
+  -d '{"width":390,"height":844,"deviceScaleFactor":1,"mobile":true}'
+```
+
 ### POST /setFiles?target=ID
 给 file input 设置本地文件路径（`DOM.setFileInputFiles`），完全绕过文件对话框。POST body 为 JSON。
 ```bash
