@@ -17,11 +17,12 @@ const PROXY = `http://127.0.0.1:${Number(process.env.CDP_PROXY_PORT || 3456)}`;
 const EXPECTED_SCHEMA = 'ad-placement-inspector.handshake.v2';
 
 function parseArgs(argv) {
-  const out = { url: '', evidenceDir: '', manifest: '', keepTab: false };
+  const out = { url: '', evidenceDir: '', manifest: '', keepTab: false, targetId: '' };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--url') out.url = argv[++i] || '';
     else if (argv[i] === '--evidence-dir') out.evidenceDir = argv[++i] || '';
     else if (argv[i] === '--manifest') out.manifest = argv[++i] || '';
+    else if (argv[i] === '--target') out.targetId = argv[++i] || '';
     else if (argv[i] === '--keep-tab') out.keepTab = true;
   }
   if (!out.url) throw new Error('--url is required');
@@ -76,8 +77,23 @@ async function main() {
     throw new Error('web-access CDP proxy is not connected to the real Chrome instance');
   }
 
-  const created = await jsonFetch(`${PROXY}/new`, { method: 'POST', body: inspectedUrl.href });
-  const targetId = created.targetId;
+  let targetId = args.targetId;
+  let createdTarget = false;
+  if (targetId) {
+    const targets = await jsonFetch(`${PROXY}/targets`);
+    if (!targets.some(target => target.targetId === targetId && target.type === 'page')) {
+      throw new Error('--target must be an existing task-owned page target');
+    }
+    // Reuse one task-owned tab across a batch to avoid per-case CDP prompts.
+    await jsonFetch(`${PROXY}/navigate?target=${encodeURIComponent(targetId)}`, {
+      method: 'POST',
+      body: inspectedUrl.href,
+    });
+  } else {
+    const created = await jsonFetch(`${PROXY}/new`, { method: 'POST', body: inspectedUrl.href });
+    targetId = created.targetId;
+    createdTarget = true;
+  }
   let result;
   try {
     let pageHandshake = null;
@@ -174,7 +190,12 @@ async function main() {
       page_handshake: pageHandshake,
       placement_acceptance: placementAcceptance,
       acceptance_manifest: acceptanceManifest,
-      target: { id: targetId, requested_url: args.url, inspected_url: inspectedUrl.href },
+      target: {
+        id: targetId,
+        requested_url: args.url,
+        inspected_url: inspectedUrl.href,
+        reused: !createdTarget,
+      },
       blocker: passed ? null : (
         !handshakePassed
           ? '广告位检查器未安装/未启用，或真实 Chrome 加载的 version/build hash 与 canonical source 不一致。'
@@ -197,7 +218,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (!passed) process.exitCode = 2;
   } finally {
-    if (!args.keepTab) {
+    if (createdTarget && !args.keepTab) {
       await jsonFetch(`${PROXY}/close?target=${encodeURIComponent(targetId)}`).catch(() => undefined);
     }
   }
