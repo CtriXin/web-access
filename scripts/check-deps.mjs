@@ -66,9 +66,14 @@ export function isConnectedProxyHealth(health) {
   return health?.status === 'ok' && health.connected === true;
 }
 
-async function connectedProxyHealth() {
+function isCompatibleProxyHealth(health, expectedBrowserId) {
+  return isConnectedProxyHealth(health)
+    && (!expectedBrowserId || health.browser?.id === expectedBrowserId);
+}
+
+async function connectedProxyHealth(expectedBrowserId) {
   const health = await httpGetJson(PROXY_HEALTH_URL);
-  return isConnectedProxyHealth(health) ? health : null;
+  return isCompatibleProxyHealth(health, expectedBrowserId) ? health : null;
 }
 
 function startProxyDetached(browserOverride) {
@@ -89,7 +94,7 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
   const targetsUrl = `http://127.0.0.1:${PROXY_PORT}/targets`;
 
   // 复用：proxy 已运行 + 已连接浏览器 → 校验 expected vs actual
-  const health = await connectedProxyHealth();
+  const health = await connectedProxyHealth(expectedBrowserId);
   if (health) {
     const runningId = health.browser?.id;
     const runningLabel = health.browser?.label || runningId || 'unknown';
@@ -191,16 +196,29 @@ async function resolveAndReport(override) {
   }
 }
 
+function reportSitePatterns() {
+  const patternsDir = path.join(ROOT, 'references', 'site-patterns');
+  try {
+    const sites = fs.readdirSync(patternsDir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => f.replace(/\.md$/, ''));
+    if (sites.length) {
+      console.log(`\nsite-patterns: ${sites.join(', ')}`);
+    }
+  } catch {}
+}
+
 // --- main ---
 
 export async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
   // A connected proxy is authoritative and remains reachable when sandbox TCC blocks DevToolsActivePort.
-  const health = await connectedProxyHealth();
+  const health = await connectedProxyHealth(opts.browser);
   if (health) {
     const label = health.browser?.label || health.browser?.id || 'unknown';
     console.log(`proxy: ready (${label})`);
+    reportSitePatterns();
     return;
   }
 
@@ -222,16 +240,7 @@ export async function main() {
   const proxyOk = await ensureProxy(browserId, opts.browser);
   if (!proxyOk) process.exit(1);
 
-  // 列出已有站点经验
-  const patternsDir = path.join(ROOT, 'references', 'site-patterns');
-  try {
-    const sites = fs.readdirSync(patternsDir)
-      .filter(f => f.endsWith('.md'))
-      .map(f => f.replace(/\.md$/, ''));
-    if (sites.length) {
-      console.log(`\nsite-patterns: ${sites.join(', ')}`);
-    }
-  } catch {}
+  reportSitePatterns();
 }
 
 const isDirectExecution = process.argv[1]
