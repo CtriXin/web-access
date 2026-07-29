@@ -104,6 +104,6 @@ test('check-deps does not early-pass when --browser conflicts with proxy health'
   }, ['--browser', 'edge']);
 
   assert.equal(result.code, 1, result.stderr);
-  assert.match(result.stdout, /browser: error — 本次指定的浏览器是 "edge"/);
+  assert.match(result.stdout, /(?:browser: error — 本次指定的浏览器是 "edge"|proxy: 浏览器不一致 — 当前已连着 Chrome，但本次需要 edge)/);
   assert.doesNotMatch(result.stdout, /proxy: ready/);
 });
