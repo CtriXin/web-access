@@ -26,6 +26,6 @@
 
 ## Review / Merge Boundary
 
-- PR candidate: to be opened by the executor after commit, owner review/merge only.
+- PR candidate: https://github.com/CtriXin/web-access/pull/2 (commit `e6daea9`), owner review/merge only.
 - No production verification applies: this is a local tooling safety change with no deploy or business runtime mutation.
-- No additional wall beyond the S04 syntax-test correction already appended to the audit issue `walls.md`.
+- Wall log: the S04 syntax-test correction is recorded in the audit issue `walls.md`.
