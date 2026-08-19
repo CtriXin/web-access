@@ -57,4 +57,8 @@ test('unknown fallback products fail closed with a user-Chrome diagnostic', () =
   );
   assert.doesNotThrow(() => validateBrowserProduct('Chrome/150.0.0.0', 'unknown'));
   assert.doesNotThrow(() => validateBrowserProduct('Chrome/150.0.0.0', 'chrome-canary'));
+  assert.throws(
+    () => validateBrowserProduct('Edg/150.0.0.0', 'chrome-canary'),
+    /疑似用户真 Chrome.*拒绝附着/
+  );
 });

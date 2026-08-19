@@ -75,13 +75,16 @@ export function isConnectedProxyHealth(health) {
   return health?.status === 'ok' && health.connected === true;
 }
 
+function proxyHealthMatchesBrowser(health, expectedBrowserId) {
+  if (!expectedBrowserId || health.browser?.id === expectedBrowserId) return true;
+  const productBrowserId = expectedBrowserId === 'chrome-canary' ? 'chrome' : expectedBrowserId;
+  return health.browser?.id === 'unknown'
+    && productMatchesBrowser(health.browser?.product, productBrowserId);
+}
+
 function isCompatibleProxyHealth(health, expectedBrowserId) {
-  const browserMatches = !expectedBrowserId
-    || health.browser?.id === expectedBrowserId
-    || (health.browser?.id === 'unknown'
-      && productMatchesBrowser(health.browser?.product, expectedBrowserId));
   return isConnectedProxyHealth(health)
-    && browserMatches
+    && proxyHealthMatchesBrowser(health, expectedBrowserId)
     && (isDefaultProxyInstance(PROXY_PORT)
       || (expectedBrowserId && !isDefaultBrowserPort(health.chromePort)));
 }
@@ -114,18 +117,13 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
     if (!isCompatibleProxyHealth(health, expectedBrowserId)) {
       if (!isDefaultProxyInstance(PROXY_PORT) && isDefaultBrowserPort(health.chromePort)) {
         console.log('proxy: blocked — 非默认 proxy 拒绝复用用户默认浏览器端口 9222');
-      } else if (expectedBrowserId && health.browser?.id && !productMatchesBrowser(health.browser?.product, expectedBrowserId)) {
-        console.log(`proxy: 浏览器不一致 — 当前已连着 ${health.browser.id}，但本次需要 ${expectedBrowserId}`);
+      } else if (expectedBrowserId && !proxyHealthMatchesBrowser(health, expectedBrowserId)) {
+        console.log(`proxy: 浏览器不一致 — 当前已连着 ${health.browser?.id || 'unknown'}，但本次需要 ${expectedBrowserId}`);
       }
       return false;
     }
     const runningId = health.browser?.id;
     const runningLabel = health.browser?.label || runningId || 'unknown';
-    if (expectedBrowserId && runningId && runningId !== 'unknown' && runningId !== expectedBrowserId) {
-      console.log(`proxy: 浏览器不一致 — 当前已连着 ${runningLabel}，但本次需要 ${expectedBrowserId}`);
-      console.log('  请先核对并停止当前 web-access proxy 的精确 PID，再重试');
-      return false;
-    }
     console.log(`proxy: ready (${runningLabel})`);
     return true;
   }
@@ -144,7 +142,7 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
         console.log(`proxy: ready (${label})`);
         return true;
       }
-      if (newHealth && expectedBrowserId && !productMatchesBrowser(newHealth.browser?.product, expectedBrowserId)) {
+      if (newHealth && expectedBrowserId && !proxyHealthMatchesBrowser(newHealth, expectedBrowserId)) {
         console.log(`proxy: 浏览器不一致 — 当前已连着 ${newHealth.browser?.label || newHealth.browser?.id || 'unknown'}，但本次需要 ${expectedBrowserId}`);
         return false;
       }

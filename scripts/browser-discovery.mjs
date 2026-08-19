@@ -130,8 +130,15 @@ export function isSupportedBrowserProduct(product) {
 }
 
 export function validateBrowserProduct(product, browserId = 'unknown') {
-  // Chrome Canary reports the same product prefix as Chrome, so identity cannot be proven here.
-  if (browserId === 'chrome-canary') return true;
+  // Chrome Canary reports the same product prefix as Chrome, so only the Chrome family can be proven.
+  if (browserId === 'chrome-canary') {
+    if (!productMatchesBrowser(product, 'chrome')) {
+      throw new Error(
+        `固定端口返回 ${product}，不是 Chrome Canary 可接受的 Chrome 产品；疑似用户真 Chrome 或错误浏览器端口，已拒绝附着。`
+      );
+    }
+    return true;
+  }
   if (browserId && browserId !== 'unknown' && !productMatchesBrowser(product, browserId)) {
     throw new Error(
       `固定端口返回 ${product}，与请求的 ${browserId} 不一致；疑似用户真 Chrome 或错误浏览器端口，已拒绝附着。`
@@ -291,7 +298,7 @@ function readConfig() {
 }
 
 // DevToolsActivePort gives the target WebSocket path; the proxy performs the CDP handshake.
-async function detectAll() {
+async function detectAll(excludedPorts = new Set()) {
   const result = [];
   for (const browser of knownBrowsers()) {
     let content;
@@ -299,7 +306,7 @@ async function detectAll() {
     catch { continue; }
     const lines = content.trim().split(/\r?\n/).filter(Boolean);
     const port = parseInt(lines[0], 10);
-    if (!(port > 0 && port < 65536)) continue;
+    if (!(port > 0 && port < 65536) || excludedPorts.has(port)) continue;
     if (!(await checkPort(port))) continue;
     result.push({ ...browser, port, wsPath: lines[1] || null });
   }
@@ -316,11 +323,12 @@ async function detectAll() {
 //   empty     = 0 浏览器开 toggle 且未设偏好/override
 //   blocked   = 非默认 proxy 未提供显式 browser override
 export async function selectBrowser(override = null) {
-  const allDetected = await detectAll();
+  const isDefaultProxy = isDefaultProxyInstance();
+  const allDetected = await detectAll(isDefaultProxy ? new Set() : new Set([DEFAULT_BROWSER_PORT]));
   const occupied = await findProxyOccupiedPorts({ currentProxyPort: getProxyPort() });
   const detected = allDetected
     .filter((browser) => !occupied.has(browser.port))
-    .filter((browser) => isDefaultProxyInstance() || !isDefaultBrowserPort(browser.port));
+    .filter((browser) => isDefaultProxy || !isDefaultBrowserPort(browser.port));
   const configured = readConfig().WEB_ACCESS_BROWSER || null;
 
   if (!isDefaultProxyInstance() && !override) {
