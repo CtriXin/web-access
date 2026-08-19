@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import { once } from 'node:events';
 
@@ -7,6 +10,8 @@ import {
   fallbackPortCandidates,
   findProxyOccupiedPorts,
   isDefaultBrowserPort,
+  registerProxyPort,
+  unregisterProxyPort,
   productMatchesBrowser,
   validateBrowserProduct,
 } from '../scripts/browser-discovery.mjs';
@@ -44,6 +49,28 @@ test('healthy proxy registry marks its browser port as occupied', async (t) => {
   });
 
   assert.equal(occupied.has(9222), true);
+});
+
+test('proxy registry excludes its own browser port and blocks another live proxy', async (t) => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'web-access-proxy-registry-'));
+  const registryFile = path.join(tempDir, 'proxies.json');
+  t.after(() => rm(tempDir, { recursive: true, force: true }));
+
+  registerProxyPort({ proxyPort: 3458, browserPort: 9333, registryFile });
+  const occupiedByOther = await findProxyOccupiedPorts({
+    currentProxyPort: 3457,
+    registryFile,
+    healthPorts: [],
+  });
+  const occupiedBySelf = await findProxyOccupiedPorts({
+    currentProxyPort: 3458,
+    registryFile,
+    healthPorts: [],
+  });
+
+  assert.equal(occupiedByOther.has(9333), true);
+  assert.equal(occupiedBySelf.has(9333), false);
+  unregisterProxyPort({ proxyPort: 3458, registryFile });
 });
 
 test('unknown fallback products fail closed with a user-Chrome diagnostic', () => {

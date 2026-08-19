@@ -20,8 +20,8 @@
 - `node --check scripts/cdp-proxy.mjs`
 - `node --check scripts/check-deps.mjs`
 - `node --test test/*.mjs`
-- Result: **11/11 passed**.
-- Negative coverage: non-default fallback excludes `9222`; unsupported/product-mismatch CDP products fail closed; another healthy proxy marks its browser port occupied; non-default precheck rejects reused `9222` health; existing proxy browser mismatch does not early-pass.
+- Result: **12/12 passed**.
+- Negative coverage: non-default fallback excludes `9222`; unsupported/product-mismatch CDP products fail closed; another healthy proxy marks its browser port occupied; registry excludes the current proxy's own port but blocks another live proxy; non-default precheck rejects reused `9222` health; existing proxy browser mismatch does not early-pass.
 - `git diff --check`: clean.
 
 ## Review / Merge Boundary
