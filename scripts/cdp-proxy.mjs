@@ -9,7 +9,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
-import { selectBrowser, findFallbackPort, productMatchesBrowser, browserEnvironment } from './browser-discovery.mjs';
+import {
+  browserEnvironment,
+  findFallbackPort,
+  getProxyPort,
+  registerProxyPort,
+  selectBrowser,
+  unregisterProxyPort,
+  validateBrowserProduct,
+} from './browser-discovery.mjs';
 
 // --- 解析命令行 --browser 参数（本次启动用哪个浏览器）---
 function parseBrowserArg() {
@@ -22,7 +30,7 @@ function parseBrowserArg() {
 }
 const BROWSER_OVERRIDE = parseBrowserArg();
 
-const PORT = parseInt(process.env.CDP_PROXY_PORT || '3456');
+const PORT = getProxyPort();
 let ws = null;
 let cmdId = 0;
 const pending = new Map(); // id -> {resolve, timer}
@@ -84,6 +92,9 @@ async function discoverChromePort() {
       `(2) 若仍失败，说明远程调试开关没启用 —— 告知用户在地址栏访问 ${expected}://inspect/#remote-debugging 勾选 "Allow remote debugging for this browser instance"。`
     );
   }
+  if (result.kind === 'blocked') {
+    throw new Error(result.reason);
+  }
   // 已 pin 过浏览器（如首次连上 edge 后 edge 退出）：拒绝任何 fallback
   if (pinnedBrowserId) {
     throw new Error(
@@ -94,7 +105,10 @@ async function discoverChromePort() {
     );
   }
   // 仅在「从未成功连接 + 无偏好/override」时允许固定端口兜底（手动 --remote-debugging-port 启动场景）
-  const fallbackPort = await findFallbackPort();
+  const fallbackPort = await findFallbackPort({
+    proxyPort: PORT,
+    browserOverride: BROWSER_OVERRIDE,
+  });
   if (fallbackPort !== null) {
     connectedBrowser = { id: 'unknown', label: '未知（通过固定端口候选）', source: 'fallback' };
     console.log(`[CDP Proxy] 使用固定端口候选: ${fallbackPort.port}`);
@@ -127,6 +141,8 @@ async function connect() {
     }
     chromePort = discovered.port;
     chromeWsPath = discovered.wsPath;
+    // Reserve the candidate before opening WebSocket so a second proxy cannot race into it.
+    registerProxyPort({ proxyPort: PORT, browserPort: chromePort });
   }
 
   const wsUrl = getWebSocketUrl(chromePort, chromeWsPath);
@@ -142,18 +158,13 @@ async function connect() {
         const version = await sendCDP('Browser.getVersion');
         const product = version.result?.product;
         if (typeof product !== 'string') throw new Error('CDP Browser.getVersion 未返回浏览器产品信息');
-        if (
-          connectedBrowser?.source === 'fallback'
-          && connectedBrowser.id !== 'unknown'
-          && !productMatchesBrowser(product, connectedBrowser.id)
-        ) {
-          throw new Error(`固定端口返回 ${product}，与请求的 ${connectedBrowser.id} 不一致`);
-        }
+        validateBrowserProduct(product, connectedBrowser?.id);
         connectedBrowser = { ...connectedBrowser, product };
         connectingPromise = null;
         console.log(`[CDP Proxy] 已连接浏览器 (端口 ${chromePort}, ${product})`);
         resolve();
       } catch (error) {
+        unregisterProxyPort({ proxyPort: PORT, browserPort: chromePort });
         connectingPromise = null;
         ws?.close();
         ws = null;
@@ -164,6 +175,7 @@ async function connect() {
     };
     const onError = (e) => {
       cleanup();
+      unregisterProxyPort({ proxyPort: PORT, browserPort: chromePort });
       connectingPromise = null;
       ws = null;
       chromePort = null;
@@ -174,6 +186,7 @@ async function connect() {
     };
     const onClose = () => {
       console.log('[CDP Proxy] 连接断开');
+      unregisterProxyPort({ proxyPort: PORT, browserPort: chromePort });
       ws = null;
       chromePort = null; // 重置端口缓存，下次连接重新发现
       chromeWsPath = null;
@@ -963,6 +976,7 @@ async function main() {
     console.log(`[CDP Proxy] ${sig}, cleaning up...`);
     clearInterval(cleanupTimer);
     await closeAllManagedTabs();
+    unregisterProxyPort({ proxyPort: PORT });
     process.exit(0);
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
