@@ -86,7 +86,7 @@ function isCompatibleProxyHealth(health, expectedBrowserId) {
   return isConnectedProxyHealth(health)
     && proxyHealthMatchesBrowser(health, expectedBrowserId)
     && (isDefaultProxyInstance(PROXY_PORT)
-      || (expectedBrowserId && !isDefaultBrowserPort(health.chromePort)));
+      || (expectedBrowserId && health.chromePort && !isDefaultBrowserPort(health.chromePort)));
 }
 
 async function connectedProxyHealth() {
