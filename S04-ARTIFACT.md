@@ -26,6 +26,6 @@
 
 ## Review / Merge Boundary
 
-- PR candidate: https://github.com/CtriXin/web-access/pull/2 (branch `codex/cdp-port-safety-s04`, implementation commits `e6daea9`, `85de4b9`, and `f0d8bc3`, current head `f0d8bc3`), owner review/merge only.
+- PR candidate: https://github.com/CtriXin/web-access/pull/2 (branch `codex/cdp-port-safety-s04`, implementation/test head `1480c8b`, owner review/merge only).
 - No production verification applies: this is a local tooling safety change with no deploy or business runtime mutation.
 - Wall log: the S04 syntax-test correction is recorded in the audit issue `walls.md`.
