@@ -61,7 +61,7 @@ AI Agent 原本的联网能力（WebSearch、WebFetch）缺少调度策略和浏
 
 **v2.5.2 更新：**
 - **Microsoft Edge 支持** — CDP Proxy 不再绑定 Chrome，新增 Edge 适配（及 Chromium、Chrome Canary 等 Chromium 系，通过同一套自动发现机制接入）。在 `edge://inspect/#remote-debugging` 勾选 "Allow remote debugging for this browser instance" 即可
-- **浏览器偏好持久化** — 新增 `config.env`（gitignored，首次运行从模板创建），通过 `WEB_ACCESS_BROWSER` 固定默认浏览器；多浏览器同时开启 toggle 时 Agent 会询问偏好。也支持单次覆盖 `--browser <chrome|edge>`
+- **浏览器偏好持久化** — 新增 `config.env`（gitignored，首次运行从模板创建），通过 `WEB_ACCESS_BROWSER` 固定默认浏览器；多浏览器同时开启 toggle 时 Agent 会询问偏好。也支持单次覆盖 `--browser <chrome|chromium|edge>`
 - **不擅自降级** — 偏好/指定的浏览器没启动或没开 toggle 时硬错并给出明确处理步骤，不会悄悄连到别的浏览器；proxy 首次成功连接后 pin 住浏览器 id，避免运行中漂移
 - **find-url 也支持 Edge** — 本地书签/历史检索默认遍历 Chrome 与 Edge，可用 `--browser <chrome|edge>` 限定单一浏览器
 
@@ -134,7 +134,13 @@ CDP 模式需要 **Node.js 22+** 和浏览器（Chrome / Edge）开启远程调�
    - Edge：`edge://inspect/#remote-debugging`
 2. 勾选 **Allow remote debugging for this browser instance**（可能需要重启浏览器）
 
-在 MMF/Codex 等隔离会话中，先设置 `WEB_ACCESS_HOST_HOME` 指向宿主用户目录。若 Chrome 已在固定端口开启远程调试但未生成 `DevToolsActivePort`，`check-deps.mjs` 会把 `9222`、`9229`、`9333` 的监听端口交给任务专属 proxy；proxy 只建立一条最终 WebSocket，并用 `Browser.getVersion` 验证 CDP 和浏览器身份。TCP 能连接本身不会被误判为可用 CDP，也不会额外触发一次 Chrome 授权弹窗。
+在 MMF/Codex 等隔离会话中，先设置 `WEB_ACCESS_HOST_HOME` 指向宿主用户目录。若 Chrome 已在固定端口开启远程调试但未生成 `DevToolsActivePort`，默认 proxy 会按 `9222`、`9229`、`9333` 顺序寻找候选；proxy 只建立一条最终 WebSocket，并用 `Browser.getVersion` 验证 CDP 和浏览器身份。TCP 能连接本身不会被误判为可用 CDP，也不会额外触发一次 Chrome 授权弹窗。
+
+**多 proxy 安全边界**：默认 `CDP_PROXY_PORT=3456` 可以连接用户默认浏览器；非默认 proxy 必须显式传入 `--browser`，且 fallback 永不探测用户默认端口 `9222`，只使用 `9229` / `9333`。fallback 还会跳过其他健康 proxy 已报告的浏览器端口。最终 `Browser.getVersion` 与显式 browser 不匹配时 fail closed，并提示“疑似用户真 Chrome”，不会附着到用户浏览器。
+
+```bash
+CDP_PROXY_PORT=3457 node "${CLAUDE_SKILL_DIR}/scripts/cdp-proxy.mjs" --browser chromium
+```
 
 ### 浏览器偏好（config.env）
 
@@ -145,7 +151,7 @@ skill 长期偏好保存在 `${CLAUDE_SKILL_DIR}/config.env`（首次运行自�
 WEB_ACCESS_BROWSER=edge
 ```
 
-合法值：`chrome` / `edge`
+合法值：`chrome` / `chromium` / `edge`
 
 **临时用别的浏览器**（不修改 config.env）：
 

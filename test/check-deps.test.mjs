@@ -10,6 +10,7 @@ import { once } from 'node:events';
 import test from 'node:test';
 
 import { isConnectedProxyHealth } from '../scripts/check-deps.mjs';
+import { fallbackPortCandidates } from '../scripts/browser-discovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK_DEPS = path.join(ROOT, 'scripts', 'check-deps.mjs');
@@ -27,6 +28,10 @@ function runCheckDeps(env, args = []) {
     child.once('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
 }
+
+test('non-default check-deps requires an explicit browser override before fallback discovery', () => {
+  assert.deepEqual(fallbackPortCandidates({ proxyPort: 3457 }), []);
+});
 
 test('isConnectedProxyHealth only accepts an explicitly connected healthy proxy', () => {
   assert.equal(isConnectedProxyHealth({ status: 'ok', connected: true }), true);
@@ -49,6 +54,7 @@ test('check-deps accepts a connected proxy before sandbox browser discovery', as
       status: 'ok',
       connected: true,
       browser: { id: 'chrome', label: 'Chrome' },
+      chromePort: 9333,
     }));
   });
 
@@ -65,12 +71,42 @@ test('check-deps accepts a connected proxy before sandbox browser discovery', as
   const result = await runCheckDeps({
     CDP_PROXY_PORT: String(port),
     WEB_ACCESS_HOST_HOME: hostHome,
-  });
+  }, ['--browser', 'chrome']);
 
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /proxy: ready \(Chrome\)/);
   assert.match(result.stdout, /site-patterns: .*test-proxy-health-pattern/);
   assert.doesNotMatch(result.stdout, /browser:/);
+});
+
+test("non-default check-deps rejects a proxy health record for the user's default browser port", async (t) => {
+  const hostHome = await mkdtemp(path.join(os.tmpdir(), 'web-access-empty-home-'));
+  const server = http.createServer((req, res) => {
+    assert.equal(req.url, '/health');
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      status: 'ok',
+      connected: true,
+      browser: { id: 'chrome', label: 'Chrome', product: 'Chrome/150.0.0.0' },
+      chromePort: 9222,
+    }));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address();
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(hostHome, { recursive: true, force: true });
+  });
+
+  const result = await runCheckDeps({
+    CDP_PROXY_PORT: String(port),
+    WEB_ACCESS_HOST_HOME: hostHome,
+  }, ['--browser', 'chrome']);
+
+  assert.equal(result.code, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /非默认 proxy 拒绝复用用户默认浏览器端口 9222/);
+  assert.doesNotMatch(result.stdout, /proxy: ready/);
 });
 
 test('check-deps does not early-pass when --browser conflicts with proxy health', async (t) => {

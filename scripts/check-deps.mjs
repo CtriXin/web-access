@@ -13,11 +13,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { selectBrowser, knownBrowsers, findFallbackPort, browserEnvironment } from './browser-discovery.mjs';
+import {
+  browserEnvironment,
+  findFallbackPort,
+  getProxyPort,
+  isDefaultBrowserPort,
+  isDefaultProxyInstance,
+  knownBrowsers,
+  productMatchesBrowser,
+  selectBrowser,
+} from './browser-discovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROXY_SCRIPT = path.join(ROOT, 'scripts', 'cdp-proxy.mjs');
-const PROXY_PORT = Number(process.env.CDP_PROXY_PORT || 3456);
+const PROXY_PORT = getProxyPort();
 const PROXY_HEALTH_URL = `http://127.0.0.1:${PROXY_PORT}/health`;
 const CONFIG_PATH = path.join(ROOT, 'config.env');
 const CONFIG_TEMPLATE = path.join(ROOT, 'templates', 'config.env.template');
@@ -66,9 +75,18 @@ export function isConnectedProxyHealth(health) {
   return health?.status === 'ok' && health.connected === true;
 }
 
+function proxyHealthMatchesBrowser(health, expectedBrowserId) {
+  if (!expectedBrowserId || health.browser?.id === expectedBrowserId) return true;
+  const productBrowserId = expectedBrowserId === 'chrome-canary' ? 'chrome' : expectedBrowserId;
+  return health.browser?.id === 'unknown'
+    && productMatchesBrowser(health.browser?.product, productBrowserId);
+}
+
 function isCompatibleProxyHealth(health, expectedBrowserId) {
   return isConnectedProxyHealth(health)
-    && (!expectedBrowserId || health.browser?.id === expectedBrowserId);
+    && proxyHealthMatchesBrowser(health, expectedBrowserId)
+    && (isDefaultProxyInstance(PROXY_PORT)
+      || (expectedBrowserId && health.chromePort && !isDefaultBrowserPort(health.chromePort)));
 }
 
 async function connectedProxyHealth() {
@@ -96,13 +114,16 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
   // 复用：proxy 已运行 + 已连接浏览器 → 校验 expected vs actual
   const health = await connectedProxyHealth();
   if (health) {
-    const runningId = health.browser?.id;
-    const runningLabel = health.browser?.label || runningId || 'unknown';
-    if (expectedBrowserId && runningId && runningId !== 'unknown' && runningId !== expectedBrowserId) {
-      console.log(`proxy: 浏览器不一致 — 当前已连着 ${runningLabel}，但本次需要 ${expectedBrowserId}`);
-      console.log('  请先核对并停止当前 web-access proxy 的精确 PID，再重试');
+    if (!isCompatibleProxyHealth(health, expectedBrowserId)) {
+      if (!isDefaultProxyInstance(PROXY_PORT) && isDefaultBrowserPort(health.chromePort)) {
+        console.log('proxy: blocked — 非默认 proxy 拒绝复用用户默认浏览器端口 9222');
+      } else if (expectedBrowserId && !proxyHealthMatchesBrowser(health, expectedBrowserId)) {
+        console.log(`proxy: 浏览器不一致 — 当前已连着 ${health.browser?.id || 'unknown'}，但本次需要 ${expectedBrowserId}`);
+      }
       return false;
     }
+    const runningId = health.browser?.id;
+    const runningLabel = health.browser?.label || runningId || 'unknown';
     console.log(`proxy: ready (${runningLabel})`);
     return true;
   }
@@ -115,10 +136,16 @@ async function ensureProxy(expectedBrowserId, browserOverride) {
   for (let i = 1; i <= 15; i++) {
     const result = await httpGetJson(targetsUrl, 8000);
     if (Array.isArray(result)) {
-      const newHealth = await httpGetJson(PROXY_HEALTH_URL);
-      const label = newHealth?.browser?.label || 'unknown';
-      console.log(`proxy: ready (${label})`);
-      return true;
+      const newHealth = await connectedProxyHealth();
+      if (isCompatibleProxyHealth(newHealth, expectedBrowserId)) {
+        const label = newHealth.browser?.label || 'unknown';
+        console.log(`proxy: ready (${label})`);
+        return true;
+      }
+      if (newHealth && expectedBrowserId && !proxyHealthMatchesBrowser(newHealth, expectedBrowserId)) {
+        console.log(`proxy: 浏览器不一致 — 当前已连着 ${newHealth.browser?.label || newHealth.browser?.id || 'unknown'}，但本次需要 ${expectedBrowserId}`);
+        return false;
+      }
     }
     if (i === 1) {
       console.log('⚠️  浏览器可能有授权弹窗，请点击「允许」后等待连接...');
@@ -166,6 +193,11 @@ async function resolveAndReport(override) {
       return { proceed: false, exitCode: 2 };
     }
 
+    case 'blocked': {
+      console.log(`browser: blocked — ${result.reason}`);
+      return { proceed: false, exitCode: 1 };
+    }
+
     case 'mismatch': {
       const expected = result.override || result.configured;
       const expectedLabel = knownBrowsers().find(b => b.id === expected)?.label || expected;
@@ -183,7 +215,10 @@ async function resolveAndReport(override) {
 
     case 'empty': {
       // 末路兜底：尝试常见固定端口（用户手动 --remote-debugging-port=9222 启动的场景）
-      const fallbackPort = await findFallbackPort();
+      const fallbackPort = await findFallbackPort({
+        proxyPort: PROXY_PORT,
+        browserOverride: override,
+      });
       if (fallbackPort) {
         console.log(`browser: candidate (port ${fallbackPort.port}) [由 proxy CDP 握手验证]`);
         return { proceed: true };
@@ -220,6 +255,10 @@ export async function main() {
     console.log(`proxy: ready (${label})`);
     reportSitePatterns();
     return;
+  }
+  if (health && !isDefaultProxyInstance(PROXY_PORT) && isDefaultBrowserPort(health.chromePort)) {
+    console.log('proxy: blocked — 非默认 proxy 拒绝复用用户默认浏览器端口 9222');
+    process.exit(1);
   }
 
   ensureConfigExists();

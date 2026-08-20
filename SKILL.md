@@ -20,6 +20,8 @@ For MMF, Codex, and other isolated sessions, export `WEB_ACCESS_HOST_HOME` (or `
 
 When a host Chrome has remote debugging enabled on a fixed port but does not expose `DevToolsActivePort`, the precheck may identify a standard local listener as a candidate. It must not open a separate probe connection: the task-owned CDP Proxy performs one `Browser.getVersion` round trip on its final connection, verifies the configured browser product, and keeps that authorized connection alive. A TCP listener or an HTTP response alone is never reported as usable CDP, and an already connected proxy is always reused before any discovery.
 
+A non-default proxy port is an isolated instance: it must be started with an explicit `--browser` override and never probes the user's default browser port `9222`; use `9229` or `9333` for the task-owned browser. The proxy also excludes browser ports already reported by another healthy proxy. A product mismatch fails closed with a `疑似用户真 Chrome` diagnostic.
+
 ## 前置检查
 
 在开始联网操作前，先检查 CDP 模式可用性：
@@ -35,7 +37,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 - `exit 2` → 需询问用户偏好，写入 `${CLAUDE_SKILL_DIR}/config.env` 的 `WEB_ACCESS_BROWSER`
 - `exit 1` → 按 stdout 错误信息处理。若提示包含「Agent 处理顺序」，按其步骤执行（如先用系统命令打开浏览器后重跑），自动可解则不打扰用户；仍失败再向用户求助
 
-支持参数 `--browser <chrome|edge>` 表达本次临时覆盖（不写 config.env）。
+支持参数 `--browser <chrome|chromium|edge>` 表达本次临时覆盖（不写 config.env）。
 
 切换浏览器时，proxy 是长驻进程。先用 `ps` 核对其精确 PID 和脚本路径，只停止该
 task-owned proxy，再重跑 check-deps；禁止使用全局 `pkill`。
