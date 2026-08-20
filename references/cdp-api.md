@@ -100,6 +100,9 @@ curl -s "http://localhost:3456/viewport?target=ID"
 ### POST /setViewport?target=ID
 为通过 `/new` 创建的 task-owned tab 下发 CDP 设备视口。拒绝用户已有 tab；不会建立新的 Chrome
 连接。Mobile source-bound 广告验收由检查器自动调用，通常不需要手工执行。
+`mobile:true` 会同时下发移动 UA 覆盖（`Emulation.setUserAgentOverride`，iPhone UA + mobile client hints）：
+legacy UA 分流站的 SSR 只按 UA 渲染对应设备变体，只改视口不改 UA 会拿到桌面变体导致验收失真。
+切回 `mobile:false` 会自动清除覆盖恢复默认 UA。覆盖在下一次导航/刷新后对 SSR 生效。
 ```bash
 curl -s -X POST "http://localhost:3456/setViewport?target=ID" \
   -H 'content-type: application/json' \
