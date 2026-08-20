@@ -24,6 +24,30 @@ test('fixed-port fallback only accepts the configured browser product', () => {
   assert.equal(productMatchesBrowser('Chrome/150.0.0.0', 'chrome-canary'), false);
 });
 
+test('ego lite is a first-class browser that self-reports a Chrome product', async () => {
+  // ego 的 Browser.getVersion 自报 Chrome/<version>（实测 150.0.7871.101），与真 Chrome 同前缀；
+  // 身份由 DevToolsActivePort 所在的 Citro Labs 路径保证，不能靠 product 区分。
+  assert.equal(productMatchesBrowser('Chrome/150.0.7871.101', 'ego'), true);
+  assert.equal(productMatchesBrowser('Edg/150.0.0.0', 'ego'), false);
+  assert.equal(productMatchesBrowser('chromium/150.0.0.0', 'ego'), false);
+  assert.doesNotThrow(() => validateBrowserProduct('Chrome/150.0.7871.101', 'ego'));
+  assert.throws(
+    () => validateBrowserProduct('Edg/150.0.0.0', 'ego'),
+    /与请求的 ego 不一致.*拒绝附着/
+  );
+
+  if (os.platform() === 'darwin') {
+    const { knownBrowsers } = await import('../scripts/browser-discovery.mjs');
+    const ego = knownBrowsers().find((browser) => browser.id === 'ego');
+    assert.ok(ego, 'darwin knownBrowsers must register ego');
+    assert.equal(ego.label, 'ego lite');
+    assert.ok(
+      ego.devToolsPath.endsWith(path.join('Citro Labs', 'ego lite', 'DevToolsActivePort')),
+      `unexpected ego DevToolsActivePort path: ${ego.devToolsPath}`
+    );
+  }
+});
+
 test("non-default proxy fallback never probes the user's default browser port", () => {
   assert.deepEqual(fallbackPortCandidates({ proxyPort: 3456 }), [9222, 9229, 9333]);
   assert.deepEqual(fallbackPortCandidates({ proxyPort: 3457 }), []);

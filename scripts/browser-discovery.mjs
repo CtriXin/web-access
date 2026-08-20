@@ -82,6 +82,10 @@ export function knownBrowsers() {
         { id: 'chrome-canary', label: 'Chrome Canary',  devToolsPath: path.join(home, 'Library/Application Support/Google/Chrome Canary/DevToolsActivePort') },
         { id: 'chromium',      label: 'Chromium',       devToolsPath: path.join(home, 'Library/Application Support/Chromium/DevToolsActivePort') },
         { id: 'edge',          label: 'Microsoft Edge', devToolsPath: path.join(home, 'Library/Application Support/Microsoft Edge/DevToolsActivePort') },
+        // ego lite：Chromium 系 Agent 浏览器（Citro Labs）。Remote debugging 是 WS-only：
+        // /json/version、/json/list 全部 404，只能读它自己写的 DevToolsActivePort 走 WS 握手。
+        // 本模块的发现逻辑本来就是「读文件 + TCP 探活 + WS 连接」，不依赖 HTTP 发现，天然兼容。
+        { id: 'ego',           label: 'ego lite',       devToolsPath: path.join(home, 'Library/Application Support/Citro Labs/ego lite/DevToolsActivePort') },
       ];
     case 'linux':
       return [
@@ -116,6 +120,9 @@ export function productMatchesBrowser(product, browserId) {
     case 'chrome': return value.startsWith('chrome/');
     case 'chromium': return value.startsWith('chromium/');
     case 'edge': return value.startsWith('edg/');
+    // ego lite 的 Browser.getVersion 自报 Chrome/<version>（实测 150.0.7871.101），
+    // 与真 Chrome 无法用 product 区分；身份由 DevToolsActivePort 所在路径（Citro Labs）保证。
+    case 'ego': return value.startsWith('chrome/');
     // Browser.getVersion cannot reliably distinguish Chrome Canary from Chrome.
     case 'chrome-canary': return false;
     default: return false;
