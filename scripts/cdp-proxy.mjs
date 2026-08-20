@@ -18,6 +18,7 @@ import {
   unregisterProxyPort,
   validateBrowserProduct,
 } from './browser-discovery.mjs';
+import { clearUaOverride, mobileUaOverride } from './ua-overrides.mjs';
 
 // --- 解析命令行 --browser 参数（本次启动用哪个浏览器）---
 function parseBrowserArg() {
@@ -36,6 +37,7 @@ let cmdId = 0;
 const pending = new Map(); // id -> {resolve, timer}
 const sessions = new Map(); // targetId -> sessionId
 const managedTabs = new Map(); // targetId -> { lastAccessed: number }
+const mobileUaTabs = new Set(); // 已下发移动 UA 覆盖的 task-owned tab（切回桌面视口时需要清除）
 const TAB_IDLE_TIMEOUT = parseInt(process.env.CDP_TAB_IDLE_TIMEOUT || '900000'); // 15 min default
 const CLEANUP_INTERVAL = 60000; // sweep every 60s
 
@@ -192,6 +194,7 @@ async function connect() {
       chromeWsPath = null;
       sessions.clear();
       managedTabs.clear();
+      mobileUaTabs.clear();
     };
     const onMessage = (evt) => {
       const data = typeof evt === 'string' ? evt : (evt.data || evt);
@@ -296,6 +299,7 @@ async function cleanupIdleTabs() {
     try { await sendCDP('Target.closeTarget', { targetId }); } catch { /* tab may already be closed */ }
     sessions.delete(targetId);
     managedTabs.delete(targetId);
+    mobileUaTabs.delete(targetId);
     console.log(`[CDP Proxy] Auto-closed idle tab: ${targetId}`);
   }
 }
@@ -307,6 +311,7 @@ async function closeAllManagedTabs() {
     try { await sendCDP('Target.closeTarget', { targetId }); } catch { /* ignore */ }
     sessions.delete(targetId);
     managedTabs.delete(targetId);
+    mobileUaTabs.delete(targetId);
   }
   if (targets.length) console.log(`[CDP Proxy] Shutdown: closed ${targets.length} managed tab(s)`);
 }
@@ -603,6 +608,7 @@ const server = http.createServer(async (req, res) => {
       const resp = await sendCDP('Target.closeTarget', { targetId: q.target });
       sessions.delete(q.target);
       managedTabs.delete(q.target);
+      mobileUaTabs.delete(q.target);
       res.end(JSON.stringify(resp.result));
     }
 
@@ -804,16 +810,29 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const sid = await ensureSession(q.target);
+      const mobile = body.mobile === true;
       await sendCDP('Emulation.setDeviceMetricsOverride', {
         width,
         height,
         deviceScaleFactor,
-        mobile: body.mobile === true,
+        mobile,
         screenWidth: width,
         screenHeight: height,
       }, sid);
+      // legacy UA 分流站 SSR 只按 UA 渲染对应设备变体：只改视口不改 UA 会拿到错误变体。
+      // mobile:true → 下发移动 UA；切回桌面视口 → 清除覆盖恢复默认 UA（只对覆盖过的 tab 发）。
+      let userAgent = 'unchanged';
+      if (mobile) {
+        await sendCDP('Emulation.setUserAgentOverride', mobileUaOverride(connectedBrowser?.product), sid);
+        mobileUaTabs.add(q.target);
+        userAgent = 'mobile';
+      } else if (mobileUaTabs.has(q.target)) {
+        await sendCDP('Emulation.setUserAgentOverride', clearUaOverride(), sid);
+        mobileUaTabs.delete(q.target);
+        userAgent = 'default';
+      }
       touchTab(q.target);
-      res.end(JSON.stringify({ status: 'ok', targetId: q.target, width, height, deviceScaleFactor, mobile: body.mobile === true }));
+      res.end(JSON.stringify({ status: 'ok', targetId: q.target, width, height, deviceScaleFactor, mobile, userAgent }));
     }
 
     // POST /setFiles?target=xxx — 给 file input 设置本地文件（绕过文件对话框）
@@ -918,7 +937,7 @@ const server = http.createServer(async (req, res) => {
           '/key?target=': 'POST JSON {action?,key,code?,text?,modifiers?} - 真实 CDP 键盘事件',
           '/insertText?target=': 'POST body=文本 - 向已进入编辑态的元素输入文本',
           '/viewport?target=': 'GET - CSS 视口、devicePixelRatio 和 visualViewport',
-          '/setViewport?target=': 'POST JSON {width,height,deviceScaleFactor?,mobile?} - 仅 task-owned tab 的 CDP 设备视口',
+          '/setViewport?target=': 'POST JSON {width,height,deviceScaleFactor?,mobile?} - 仅 task-owned tab 的 CDP 设备视口（mobile:true 同步覆盖移动 UA）',
           '/scroll?target=&y=&direction=': 'GET - 滚动页面',
           '/screenshot?target=&file=': 'GET - 截图',
         },

@@ -37,7 +37,14 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 - `exit 2` → 需询问用户偏好，写入 `${CLAUDE_SKILL_DIR}/config.env` 的 `WEB_ACCESS_BROWSER`
 - `exit 1` → 按 stdout 错误信息处理。若提示包含「Agent 处理顺序」，按其步骤执行（如先用系统命令打开浏览器后重跑），自动可解则不打扰用户；仍失败再向用户求助
 
-支持参数 `--browser <chrome|chromium|edge>` 表达本次临时覆盖（不写 config.env）。
+支持参数 `--browser <chrome|chromium|edge|ego>` 表达本次临时覆盖（不写 config.env）。
+
+`ego` = Citro Labs ego lite（Chromium 系 Agent 浏览器，macOS）：开 Remote debugging 后自写
+`~/Library/Application Support/Citro Labs/ego lite/DevToolsActivePort`，`--browser=ego` 免 seed 直连。
+注意三点：① 它是 WS-only（`/json/version`、`/json/list` 均 404），只能走 DevToolsActivePort 文件发现；
+② `Browser.getVersion` 自报 `Chrome/`，product 无法与真 Chrome 区分，身份由 Citro Labs 路径保证；
+③ 每新建一个 CDP client 连接会弹一次授权（同 proxy 存活期内复用不再弹），缓解 = 一任务一 proxy 保活。
+ego 盲区：运行中实例无法补 `--host-resolver-rules` 等 launch flag，本地 pre-DNS 多域名 Host 路由验证仍用自建 Chrome for Testing 实例。
 
 切换浏览器时，proxy 是长驻进程。先用 `ps` 核对其精确 PID 和脚本路径，只停止该
 task-owned proxy，再重跑 check-deps；禁止使用全局 `pkill`。
@@ -149,7 +156,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/find-url.mjs" [关键词...] [--only bookmarks
 
 ## 浏览器 CDP 模式
 
-通过 CDP Proxy 直连用户日常浏览器（Chrome / Edge / Chromium 等 Chromium 系），天然携带登录态，无需启动独立浏览器。
+通过 CDP Proxy 直连用户日常浏览器（Chrome / Edge / Chromium / ego lite 等 Chromium 系），天然携带登录态，无需启动独立浏览器。
 若无用户明确要求，不主动操作用户已有 tab，所有操作都在自己创建的后台 tab 中进行，保持对用户环境的最小侵入。不关闭用户 tab 的前提下，完成任务后关闭自己创建的 tab，保持环境整洁。
 
 ### 启动
