@@ -384,12 +384,32 @@ export async function selectBrowser(override = null) {
   return { kind: 'ambiguous', detected, configured };
 }
 
+// 固定端口候选的 wsPath：现代 Chrome/CfT 拒绝裸 /devtools/browser（必须带 UUID）。
+// 从 /json/version 的 webSocketDebuggerUrl 提取真实路径；拿不到就返回 null，
+// 让连接层硬错，绝不假装可用。
+export async function fallbackWsPath(port, { fetchImpl = globalThis.fetch, timeoutMs = 2000 } = {}) {
+  if (typeof fetchImpl !== 'function') return null;
+  try {
+    const response = await fetchImpl(`http://127.0.0.1:${port}/json/version`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = await response.json();
+    const wsUrl = body?.webSocketDebuggerUrl;
+    if (typeof wsUrl !== 'string') return null;
+    const wsPath = new URL(wsUrl).pathname;
+    return wsPath.startsWith('/devtools/browser/') ? wsPath : null;
+  } catch {
+    return null;
+  }
+}
+
 // 兜底：扫描常用固定端口。它只是连接候选，CDP proxy 会在同一条最终连接上验证。
 export async function findFallbackPort({
   proxyPort = getProxyPort(),
   browserOverride = null,
   registryFile,
   healthPorts,
+  fetchImpl,
 } = {}) {
   const candidates = fallbackPortCandidates({ proxyPort, browserOverride });
   if (!candidates.length) return null;
@@ -400,7 +420,7 @@ export async function findFallbackPort({
   });
   for (const port of candidates) {
     if (occupied.has(port)) continue;
-    if (await checkPort(port)) return { port, wsPath: null };
+    if (await checkPort(port)) return { port, wsPath: await fallbackWsPath(port, { fetchImpl }) };
   }
   return null;
 }

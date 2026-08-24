@@ -8,6 +8,7 @@ import { once } from 'node:events';
 
 import {
   fallbackPortCandidates,
+  fallbackWsPath,
   findProxyOccupiedPorts,
   isDefaultBrowserPort,
   registerProxyPort,
@@ -95,6 +96,24 @@ test('proxy registry excludes its own browser port and blocks another live proxy
   assert.equal(occupiedByOther.has(9333), true);
   assert.equal(occupiedBySelf.has(9333), false);
   unregisterProxyPort({ proxyPort: 3458, registryFile });
+});
+
+test('fallbackWsPath extracts the UUID path from /json/version (modern Chrome rejects bare /devtools/browser)', async () => {
+  const fetchImpl = async (url) => ({
+    json: async () => ({ webSocketDebuggerUrl: 'ws://127.0.0.1:9229/devtools/browser/4de159ee-be1f-468e-8679-32d3481ca6f3' }),
+  });
+  assert.equal(await fallbackWsPath(9229, { fetchImpl }), '/devtools/browser/4de159ee-be1f-468e-8679-32d3481ca6f3');
+});
+
+test('fallbackWsPath fails closed on non-browser endpoints / bad payloads', async () => {
+  // 非 CDP 端口（如普通 HTTP 服务）→ null，不假装可用
+  assert.equal(await fallbackWsPath(9229, { fetchImpl: async () => { throw new Error('ECONNREFUSED'); } }), null);
+  // 缺 webSocketDebuggerUrl → null
+  assert.equal(await fallbackWsPath(9229, { fetchImpl: async () => ({ json: async () => ({}) }) }), null);
+  // 路径不含 /devtools/browser/<uuid> → null
+  assert.equal(await fallbackWsPath(9229, { fetchImpl: async () => ({ json: async () => ({ webSocketDebuggerUrl: 'ws://127.0.0.1:9229/other' }) }) }), null);
+  // 无 fetch 实现 → null
+  assert.equal(await fallbackWsPath(9229, { fetchImpl: null }), null);
 });
 
 test('unknown fallback products fail closed with a user-Chrome diagnostic', () => {
