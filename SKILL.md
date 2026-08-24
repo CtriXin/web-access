@@ -46,6 +46,32 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 ③ 每新建一个 CDP client 连接会弹一次授权（同 proxy 存活期内复用不再弹），缓解 = 一任务一 proxy 保活。
 ego 盲区：运行中实例无法补 `--host-resolver-rules` 等 launch flag，本地 pre-DNS 多域名 Host 路由验证仍用自建 Chrome for Testing 实例。
 
+## 环境路由：ego / CfT 永久分工（ENV-ROUTER-01）
+
+探测一次确定选路，之后不再重复探测。分工由 `scripts/env-router.mjs` 代码化：
+
+| 任务 intent | lane | 形态 |
+|---|---|---|
+| `production` / `visual` / `behavior`（真实站附着、视觉验收、行为交互） | **ego** | 附着用户已运行 ego 实例（WS-only，复用登录态），headful=false |
+| `pre-dns-host-mapping`（或任何需要 `--host-resolver-rules` 的任务） | **CfT** | 独立 headful Chrome for Testing：task-owned `--user-data-dir` + 非默认调试端口 9229/9333 + `--host-resolver-rules`，由 `scripts/cft-host-browser.mjs` 启停 |
+
+铁律：两边**不做兼容 fallback**。调用方显式指定的方向与路由结果不一致（如 forced=ego 跑 pre-DNS、forced=cft 跑 production）时，`routeBrowser()` 返回 actionable `blocked`，绝不静默换道。headful 仅限 CfT lane；其余场景一律 headless/附着。
+
+CfT lane 用法：
+
+```bash
+node "${CLAUDE_SKILL_DIR}/scripts/cft-host-browser.mjs" start \
+  --profile "<task-owned-dir>" --host-resolver-rules "MAP <host> 127.0.0.1" [--port 9229]
+# 另起非默认 proxy 附着：CDP_PROXY_PORT=34xx node scripts/cdp-proxy.mjs --browser=chrome
+# 用完即收（只杀自己 launch 文件记录的 pid，kill 前核对 cmdline 属本 profile）：
+node "${CLAUDE_SKILL_DIR}/scripts/cft-host-browser.mjs" stop --profile "<task-owned-dir>" [--clean]
+```
+
+截图降级：浏览器 helper 层截图（如 ego helper `captureScreenshot`）失败/超时时，
+`captureVisualEvidence()` 自动降级到 CDP primitive（`Page.captureScreenshot`，经
+proxy `/screenshot`）；两层都失败返回明确 `blocked`。任何一层都不允许伪造视觉 PASS。
+（已知：ego helper `captureScreenshot` 超时是 ego 侧 bug，CDP 层正常——登记不修。）
+
 切换浏览器时，proxy 是长驻进程。先用 `ps` 核对其精确 PID 和脚本路径，只停止该
 task-owned proxy，再重跑 check-deps；禁止使用全局 `pkill`。
 
