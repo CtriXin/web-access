@@ -3,8 +3,8 @@ name: web-access
 license: MIT
 github: https://github.com/CtriXin/web-access
 description:
-  所有联网操作必须通过此 skill 处理，包括：搜索、网页抓取、登录后操作、网络交互等。
-  触发场景：用户要求搜索信息、查看网页内容、访问需要登录的网站、操作网页界面、抓取社交媒体内容（小红书、微博、推特等）、读取动态渲染页面、以及任何需要真实浏览器环境的网络任务。
+  使用 web-access CDP backend 操作已授权的浏览器页面、读取需要登录态或动态渲染的内容，或显式调用本 backend。
+  普通搜索、静态网页读取和已有结构化 API/CLI 不需要经过本 skill；真实页面的默认 ego-browser 偏好保持有效。
 metadata:
   author: 一泽Eze; CtriXin distribution
   version: "2.6.0-ctrixin.1"
@@ -14,7 +14,7 @@ metadata:
 
 ## Weber / MMF Integration
 
-`web-access` is a browser backend. When an agent enters through Weber/Webber, Weber chooses whether to use this backend; when an agent explicitly loads `web-access`, it may proceed directly.
+`web-access` is a browser backend. Explicit invocation may enter directly; Weber may select it when this backend fits the task. Ordinary search, static reading and supported API/CLI operations use their existing purpose-built tool and stop here, without CDP prechecks or browser startup. For real page work, honor the user's current ego-browser preference; use this backend when explicitly selected or its particular CDP capability is needed.
 
 For MMF, Codex, and other isolated sessions, export `WEB_ACCESS_HOST_HOME` (or `HOST_HOME` / `REAL_HOME`) as the host user's home directory before running the precheck. Browser discovery then reads the host `DevToolsActivePort`, while the agent never copies the host Chrome profile or cookie database. If the session HOME is isolated and no host-home handoff is available, `check-deps.mjs` hard-fails rather than guessing a Chrome profile or starting a browser.
 
@@ -24,7 +24,7 @@ A non-default proxy port is an isolated instance: it must be started with an exp
 
 ## 前置检查
 
-在开始联网操作前，先检查 CDP 模式可用性：
+只有选用本 CDP backend 后，才检查其可用性；健康 proxy 已存在时复用，不为普通搜索或 API 读取启动浏览器。下方 `${CLAUDE_SKILL_DIR}` 是历史变量名，表示已加载的本 skill 根目录；按实际路径设置即可，不需要 Claude 进程。
 
 ```bash
 node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
@@ -34,7 +34,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 
 按脚本输出处理：
 - `exit 0` → 继续
-- `exit 2` → 需询问用户偏好，写入 `${CLAUDE_SKILL_DIR}/config.env` 的 `WEB_ACCESS_BROWSER`
+- `exit 2` → 先按当前用户选择使用临时 `--browser` 覆盖；选择仍不明确且无法从上下文确认时才询问。已有 ego 偏好不重复问，也不因此自动写 `config.env`
 - `exit 1` → 按 stdout 错误信息处理。若提示包含「Agent 处理顺序」，按其步骤执行（如先用系统命令打开浏览器后重跑），自动可解则不打扰用户；仍失败再向用户求助
 
 支持参数 `--browser <chrome|chromium|edge|ego>` 表达本次临时覆盖（不写 config.env）。
@@ -105,11 +105,7 @@ profile 替代。
 
 **隔离环境硬规则：** 已有登录态的任务必须先通过 `check-deps.mjs` 连接宿主 Chrome。不得从隔离 HOME 启动个人 Chrome binary，也不得回退到 Playwright 独立 Profile；必须命令启动时使用 `mms-chrome-host`。
 
-检查通过后并必须在回复中向用户直接展示以下须知，再启动 CDP Proxy 执行操作：
-
-```
-温馨提示：部分站点对浏览器自动化操作检测严格，存在账号封禁风险。已内置防护措施但无法完全避免，Agent 继续操作即视为接受。
-```
+检查通过后按已有授权操作，不每次复读泛化风险提示或重新索取同一权限。发现具体的新风险、权限缺口或 scope 变化时再说明；Agent 继续操作不代表用户新增授权。
 
 ## 浏览哲学
 
