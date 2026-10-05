@@ -19,6 +19,7 @@ import {
   validateBrowserProduct,
 } from './browser-discovery.mjs';
 import { clearUaOverride, mobileUaOverride } from './ua-overrides.mjs';
+import { pausedRequestFailCommand, portGuardPatterns } from './port-guard.mjs';
 
 // --- 解析命令行 --browser 参数（本次启动用哪个浏览器）---
 function parseBrowserArg() {
@@ -193,6 +194,7 @@ async function connect() {
       chromePort = null; // 重置端口缓存，下次连接重新发现
       chromeWsPath = null;
       sessions.clear();
+      portGuardedSessions.clear();
       managedTabs.clear();
       mobileUaTabs.clear();
     };
@@ -205,9 +207,10 @@ async function connect() {
         sessions.set(targetInfo.targetId, sessionId);
       }
       // 拦截页面对 Chrome 调试端口的探测请求（反风控）
-      if (msg.method === 'Fetch.requestPaused') {
-        const { requestId, sessionId: sid } = msg.params;
-        sendCDP('Fetch.failRequest', { requestId, errorReason: 'ConnectionRefused' }, sid).catch(() => {});
+      // flatten 模式下 sessionId 在消息顶层（params 里没有），见 port-guard.mjs
+      const failCommand = pausedRequestFailCommand(msg);
+      if (failCommand) {
+        sendCDP(failCommand.method, failCommand.params, failCommand.sessionId).catch(() => {});
       }
       if (msg.id && pending.has(msg.id)) {
         const { resolve, timer } = pending.get(msg.id);
@@ -275,12 +278,7 @@ async function ensureSession(targetId) {
 async function enablePortGuard(sessionId) {
   if (!chromePort || portGuardedSessions.has(sessionId)) return;
   try {
-    await sendCDP('Fetch.enable', {
-      patterns: [
-        { urlPattern: `http://127.0.0.1:${chromePort}/*`, requestStage: 'Request' },
-        { urlPattern: `http://localhost:${chromePort}/*`, requestStage: 'Request' },
-      ]
-    }, sessionId);
+    await sendCDP('Fetch.enable', { patterns: portGuardPatterns(chromePort) }, sessionId);
     portGuardedSessions.add(sessionId);
   } catch { /* Fetch 域启用失败不影响主流程 */ }
 }
