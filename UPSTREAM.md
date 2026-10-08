@@ -4,7 +4,7 @@
 [`eze-is/web-access`](https://github.com/eze-is/web-access).
 
 - Upstream baseline: `7af34af6a25940d917905f0e5f2a7ef056952971` (`v2.5.3`)
-- Distribution version: `2.6.0-ctrixin.1`
+- Distribution version: `2.6.0-ctrixin.2`
 - Canonical local checkout: `/Users/xin/auto-skills/CtriXin-repo/web-access`
 - Runtime, global Agent skill directories, and MMF session overlays are consumers
   of this checkout; they must not become independent source copies.

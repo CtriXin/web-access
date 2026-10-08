@@ -7,7 +7,7 @@ description:
   普通搜索、静态网页读取和已有结构化 API/CLI 不需要经过本 skill；真实页面的默认 ego-browser 偏好保持有效。
 metadata:
   author: 一泽Eze; CtriXin distribution
-  version: "2.6.0-ctrixin.1"
+  version: "2.6.0-ctrixin.2"
 ---
 
 # web-access Skill
